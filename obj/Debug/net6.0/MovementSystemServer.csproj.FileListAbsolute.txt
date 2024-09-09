@@ -1,0 +1,15 @@
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.csproj.AssemblyReference.cache
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.AssemblyInfoInputs.cache
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.AssemblyInfo.cs
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.csproj.CoreCompileInputs.cache
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\MovementSystemServer.exe
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\MovementSystemServer.deps.json
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\MovementSystemServer.runtimeconfig.json
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\MovementSystemServer.dll
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\MovementSystemServer.pdb
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.dll
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\refint\MovementSystemServer.dll
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.pdb
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.genruntimeconfig.cache
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\ref\MovementSystemServer.dll
