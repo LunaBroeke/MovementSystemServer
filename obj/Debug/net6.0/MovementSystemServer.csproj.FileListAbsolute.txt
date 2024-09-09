@@ -13,3 +13,5 @@ C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\
 C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.pdb
 C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.genruntimeconfig.cache
 C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\ref\MovementSystemServer.dll
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\bin\Debug\net6.0\Newtonsoft.Json.dll
+C:\Users\super\source\repos\MovementSystemServer\MovementSystemServer\obj\Debug\net6.0\MovementSystemServer.csproj.CopyComplete
