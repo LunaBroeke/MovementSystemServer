@@ -1,0 +1,6 @@
+
+/bin/Release
+/obj/publish
+/obj/Release
+/Properties
+*.user

@@ -187,36 +187,42 @@ namespace MovementSystemServer
 
         private void BroadcastPlayerData()
         {
+            int i = 0;
             while (true)
             {
-                // Create PlayerInfoList from the players dictionary
-                PlayerInfoList playerInfoList = new PlayerInfoList
+                try
                 {
-                    players = players
-                };
-
-                // Serialize PlayerInfoList and send to each connected client
-                string allPlayersData = JsonConvert.SerializeObject(playerInfoList);
-                //Logger.Log($"{allPlayersData}");
-                byte[] data = Encoding.ASCII.GetBytes(allPlayersData + "\n");
-
-                lock (clients)
-                {
-                    foreach (TcpClient client in clients)
+                    // Create PlayerInfoList from the players dictionary
+                    PlayerInfoList playerInfoList = new PlayerInfoList
                     {
-                        try
+                        players = players
+                    };
+
+                    // Serialize PlayerInfoList and send to each connected client
+                    string allPlayersData = JsonConvert.SerializeObject(playerInfoList);
+                    //Logger.Log($"{allPlayersData}");
+                    byte[] data = Encoding.ASCII.GetBytes(allPlayersData + "\n");
+
+                    lock (clients)
+                    {
+                        foreach (TcpClient client in clients)
                         {
-                            NetworkStream stream = client.GetStream();
-                            if (true)
+                            try
                             {
-                                //Logger.Log($"Broadcasting data to client {client.Client.RemoteEndPoint}");
-                                stream.Write(data, 0, data.Length);
+                                NetworkStream stream = client.GetStream();
+                                if (true)
+                                {
+                                    i++;
+                                    stream.Write(data, 0, data.Length);
+                                    stream.Flush();
+                                }
                             }
+                            catch (Exception e) { Logger.LogError($"Error sending data to client {client.Client.RemoteEndPoint}: {e.Message}"); continue; }
                         }
-                        catch (Exception e) { Logger.LogError($"Error sending data to client {client.Client.RemoteEndPoint}: {e.Message}"); }
                     }
+                    Thread.Sleep(30);
                 }
-                Thread.Sleep(300);
+                catch (Exception e) { Logger.LogError(e.Message); continue; }
             }
         }
 
