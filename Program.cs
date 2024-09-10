@@ -22,6 +22,7 @@ namespace MovementSystemServer
         public Position position { get; set; }
         public int health { get; set; }
         public int puppetID { get; set; }
+        public string IPv4 { get; set; }
     }
 
     // Updated PlayerInfoList to match the new format
@@ -63,7 +64,8 @@ namespace MovementSystemServer
 
                 server = new TcpListener(address, port);
                 server.Start();
-
+                Logger.Log($"Listening on {address}");
+                Logger.Log($"Listening on {port}");
                 Console.WriteLine("Server started. Waiting for connections...");
 
                 while (true)
@@ -117,27 +119,40 @@ namespace MovementSystemServer
                     if (bytesRead == 0) break;
 
                     data = Encoding.ASCII.GetString(bytes, 0, bytesRead);
-                    //Console.WriteLine($"Received JSON: {data}");
-
-                    PlayerInfo playerInfo = JsonConvert.DeserializeObject<PlayerInfo>(data);
-                    playerInfo.puppetID = puppetID; // Assign puppetID
-
-                    lock (players)
+                    string[] datas = data.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
+                    try
                     {
-                        // Find existing player with the same puppetID and update their info, or add new player
-                        PlayerInfo existingPlayer = FindPlayerByID(players, puppetID);
-                        if (existingPlayer != null)
+                        foreach (string d in datas)
                         {
-                            // Update existing player's data
-                            existingPlayer.playerName = playerInfo.playerName;
-                            existingPlayer.position = playerInfo.position;
-                            existingPlayer.health = playerInfo.health;
+                            PlayerInfo playerInfo = JsonConvert.DeserializeObject<PlayerInfo>(d);
+                            playerInfo.puppetID = puppetID; // Assign puppetID
+
+                            lock (players)
+                            {
+                                playerInfo.playerName = NameCheck(playerInfo);
+                                IPEndPoint ip = client.Client.RemoteEndPoint as IPEndPoint;
+                                playerInfo.IPv4 = ip.Address.ToString();
+                                // Find existing player with the same puppetID and update their info, or add new player
+                                PlayerInfo existingPlayer = FindPlayerByID(players, puppetID);
+                                if (existingPlayer != null)
+                                {
+                                    // Update existing player's data
+                                    existingPlayer.playerName = playerInfo.playerName;
+                                    existingPlayer.position = playerInfo.position;
+                                    existingPlayer.health = playerInfo.health;
+                                }
+                                else
+                                {
+                                    // Add new player if not found
+                                    players.Add(playerInfo);
+                                }
+                            }
                         }
-                        else
-                        {
-                            // Add new player if not found
-                            players.Add(playerInfo);
-                        }
+                    }
+                    catch (JsonReaderException e)
+                    {
+                        Logger.LogError($"Packet error: {e.Message}");
+                        continue;
                     }
 
                     //BroadcastPlayerData();
@@ -145,7 +160,7 @@ namespace MovementSystemServer
             }
             catch (Exception e)
             {
-                Logger.LogError($"Client connection error: {e.Message}");
+                Logger.LogError($"Client connection error: {e}");
                 if (e.Message.Contains("A connection attempt failed because the connected party did not properly respond after a period of time"))
                 {
                     Logger.LogError("Read failure");
@@ -154,22 +169,30 @@ namespace MovementSystemServer
                     stream.WriteTimeout = 500;
                     stream.Write(data, 0, data.Length);
                 }
+                Disconnect(client, puppetID);
             }
-            finally
+        }
+
+        string NameCheck(PlayerInfo playerInfo)
+        {
+            if (playerInfo.playerName == "") { return $"Puppet{playerInfo.puppetID}"; }
+            return playerInfo.playerName;
+        }
+
+        void Disconnect(TcpClient client, int puppetID)
+        {
+            lock (clients)
             {
-                lock (clients)
-                {
-                    clients.Remove(client);
-                }
-
-                lock (players)
-                {
-                    players.Remove(FindPlayerByID(players,puppetID));
-                }
-
-                client.Close();
-                Logger.Log($"Client with Puppet ID {puppetID} disconnected.");
+                clients.Remove(client);
             }
+
+            lock (players)
+            {
+                players.Remove(FindPlayerByID(players, puppetID));
+            }
+
+            client.Close();
+            Logger.Log($"Client with Puppet ID {puppetID} disconnected.");
         }
 
         static PlayerInfo FindPlayerByID(List<PlayerInfo> players, int playerID)
@@ -197,11 +220,10 @@ namespace MovementSystemServer
                     {
                         players = players
                     };
-
                     // Serialize PlayerInfoList and send to each connected client
                     string allPlayersData = JsonConvert.SerializeObject(playerInfoList);
                     //Logger.Log($"{allPlayersData}");
-                    byte[] data = Encoding.ASCII.GetBytes(allPlayersData + "\n");
+                    byte[] data = Encoding.ASCII.GetBytes(allPlayersData + '\n');
 
                     lock (clients)
                     {
@@ -222,7 +244,7 @@ namespace MovementSystemServer
                     }
                     Thread.Sleep(30);
                 }
-                catch (Exception e) { Logger.LogError(e.Message); continue; }
+                catch (Exception e) { Logger.LogError(e.ToString()); continue; }
             }
         }
 
