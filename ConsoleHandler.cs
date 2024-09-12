@@ -32,7 +32,8 @@ namespace MovementSystemServer
                 else if (input.ToLower() == "status")
                 {
                     Logger.Log($"Connected clients: {Program.clients.Count}\n {ListClients(Program.clients)}");
-                    Logger.Log($"Active players: {Program.players.Count}\n {ListPlayers(Program.players)}");
+                    Logger.Log($"Active players: {Program.serverPlayers.Count}\n {ListPlayers(Program.serverPlayers)}");
+                    Logger.Log($"Master: {Program.master.playerName}");
                 }
                 else
                 {
@@ -52,14 +53,17 @@ namespace MovementSystemServer
             }
             return s;
         }
-        public string ListPlayers(List<PlayerInfo> pis)
+        public string ListPlayers(List<ServerPlayer> sps)
         {
             string s = string.Empty;
             int i = 0;
-            foreach (PlayerInfo p in pis)
+            foreach (ServerPlayer p in sps)
             {
+                PlayerInfo pi = p.info;
+                TcpClient tcp = p.tcpClient;
+                IPEndPoint ipe = tcp.Client.RemoteEndPoint as IPEndPoint;
                 i++;
-                s += $"IPv4: {p.IPv4}\n Name: {p.playerName}\n PuppetID:{p.puppetID}\n ";
+                s += $"IPv4: {ipe.Address}:{ipe.Port}\n Name: {pi.playerName}\n PuppetID:{pi.puppetID}\n ";
             }
             return s;
         }

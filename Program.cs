@@ -18,11 +18,16 @@ namespace MovementSystemServer
 
     public class PlayerInfo
     {
-        public int puppetID { get; set; }
+        public int puppetID { get; set; } = -1;
         public string playerName { get; set; }
         public Position position { get; set; }
         public int health { get; set; }
-        public string IPv4 { get; set; }
+    }
+    public class ServerPlayer
+    {
+        public PlayerInfo info { get; set; }
+        public TcpClient tcpClient { get; set; }
+
     }
     public class ObjectInfo
     {
@@ -43,15 +48,18 @@ namespace MovementSystemServer
     {
         private const int maxPlayers = 4;
         public TcpListener server;
+        public static List<ServerPlayer> serverPlayers = new List<ServerPlayer>();
         public static List<PlayerInfo> players = new List<PlayerInfo>();
         public static List<TcpClient> clients = new List<TcpClient>();
         public static List<ObjectInfo> objects = new List<ObjectInfo>();
-        
+
+        public static PlayerInfo master;
+
         public static void Main(string[] args)
         {
             Program program = new();
-            ConsoleHandler ch = new() { program = program};
-            Thread serverThread =new Thread(program.StartServer) { IsBackground = true, Priority = ThreadPriority.Highest };
+            ConsoleHandler ch = new() { program = program };
+            Thread serverThread = new Thread(program.StartServer) { IsBackground = true, Priority = ThreadPriority.Highest };
             //serverThread.Start();
 
             Thread consoleThread = new Thread(ch.StartConsole) { IsBackground = true };
@@ -59,7 +67,8 @@ namespace MovementSystemServer
 
             //Thread broadcast = new Thread(program.BroadcastPuppetData) { IsBackground = true };
             //broadcast.Start();
-//            while (serverThread.IsAlive) { Thread.Sleep(100); }
+            //            while (serverThread.IsAlive) { Thread.Sleep(100); }
+            master = new PlayerInfo();
             program.StartServer();
         }
 
@@ -105,14 +114,29 @@ namespace MovementSystemServer
                 Logger.Log("Server stopped.");
             }
         }
-
+        private PlayerInfo CheckMaster()
+        {
+            try { if (master.puppetID == -1) { PlayerInfo p = players.First(); Logger.Log($"{p.playerName} has been selected as master"); return p; } } catch { return new PlayerInfo(); }
+            return master;
+        }
+        private bool ClientCode(string message, TcpClient client, PlayerInfo player)
+        {
+            switch (message)
+            {
+                case "Disconnect":
+                    Disconnect(client, player.puppetID);
+                    return true;
+                default:
+                    return false;
+            }
+        }
         private void HandleClient(TcpClient client)
         {
             int puppetID = AssingPuppetID();
             try
             {
                 NetworkStream stream = client.GetStream();
-                byte[] bytes = new byte[1024];
+                byte[] bytes = new byte[512];
                 string data = null;
 
                 byte[] puppetIDData = Encoding.ASCII.GetBytes($"{puppetID}\n");
@@ -127,11 +151,13 @@ namespace MovementSystemServer
                     if (bytesRead == 0) break;
 
                     data = Encoding.ASCII.GetString(bytes, 0, bytesRead);
+
                     string[] datas = data.Split(new[] { '\n' }, StringSplitOptions.RemoveEmptyEntries);
                     try
                     {
                         foreach (string d in datas)
                         {
+                            if (ClientCode(d, client, FindPlayerByID(puppetID))) { return; }
                             PlayerInfo playerInfo = JsonConvert.DeserializeObject<PlayerInfo>(d);
                             playerInfo.puppetID = puppetID; // Assign puppetID
 
@@ -139,9 +165,9 @@ namespace MovementSystemServer
                             {
                                 playerInfo.playerName = NameCheck(playerInfo);
                                 IPEndPoint ip = client.Client.RemoteEndPoint as IPEndPoint;
-                                playerInfo.IPv4 = ip.Address.ToString();
+                                //playerInfo.IPv4 = ip.Address.ToString();
                                 // Find existing player with the same puppetID and update their info, or add new player
-                                PlayerInfo existingPlayer = FindPlayerByID(players, puppetID);
+                                PlayerInfo existingPlayer = FindPlayerByID(puppetID);
                                 if (existingPlayer != null)
                                 {
                                     // Update existing player's data
@@ -153,9 +179,16 @@ namespace MovementSystemServer
                                 {
                                     // Add new player if not found
                                     players.Add(playerInfo);
+                                    lock (serverPlayers) { ServerPlayer sp = new ServerPlayer { info = playerInfo, tcpClient = client }; serverPlayers.Add(sp); }
+                                    lock (master) { master = CheckMaster(); }
                                 }
                             }
                         }
+                    }
+                    catch (JsonSerializationException e)
+                    {
+                        Logger.LogError($"Packet error: {e.Message}");
+                        continue;
                     }
                     catch (JsonReaderException e)
                     {
@@ -163,7 +196,8 @@ namespace MovementSystemServer
                         continue;
                     }
 
-                    BroadcastPuppetData();
+                    try { BroadcastPuppetData(); }
+                    catch (Exception e) { Logger.LogError(e.Message); continue; };
                 }
             }
             catch (Exception e)
@@ -196,65 +230,78 @@ namespace MovementSystemServer
 
             lock (players)
             {
-                players.Remove(FindPlayerByID(players, puppetID));
+                serverPlayers.Remove(FindServerPlayer(FindPlayerByID(puppetID)));
+                players.Remove(FindPlayerByID(puppetID));
+                if (master.puppetID == puppetID) { Logger.LogWarning($"Master disconnected, attempting to assign new Master"); master.puppetID = -1; master = CheckMaster(); }
             }
 
             client.Close();
             Logger.Log($"Client with Puppet ID {puppetID} disconnected.");
         }
-
-        static PlayerInfo FindPlayerByID(List<PlayerInfo> players, int playerID)
+        void Disconnect(TcpClient client)
         {
-            foreach (PlayerInfo player in players) { if (player.puppetID == playerID) { return player; } } return null;
+            lock (clients)
+            {
+                clients.Remove(client);
+            }
+
+            client.Close();
+            Logger.Log($"Client {client.Client.RemoteEndPoint} disconnected.");
+        }
+
+        static PlayerInfo FindPlayerByID(int playerID)
+        {
+            foreach (PlayerInfo player in players) { if (player.puppetID == playerID) { return player; } }
+            return null;
+        }
+        static ServerPlayer FindServerPlayer(PlayerInfo pinfo)
+        {
+            foreach (ServerPlayer sps in serverPlayers) { if (sps.info.puppetID == pinfo.puppetID) { return sps; } }
+            return null;
+        }
+
+        static ServerPlayer FindServerPlayer(TcpClient client)
+        {
+            foreach (ServerPlayer sps in serverPlayers) { if (sps.tcpClient.Client.RemoteEndPoint == client.Client.RemoteEndPoint) { return sps; } }
+            return null;
         }
 
         int AssingPuppetID()
         {
             int id;
             Random random = new Random();
-            do { id = random.Next(1, 1000); } while ( players.Contains(FindPlayerByID(players,id)));
+            do { id = random.Next(1, 1000); } while (players.Contains(FindPlayerByID(id)));
             return id;
         }
 
         private void BroadcastPuppetData()
         {
             int i = 0;
-            //while (true)
-            //{
-                try
-                {
-                    Thread.Sleep(30);
-                    // Create PlayerInfoList from the players dictionary
-                    PuppetInfoList puppetInfoList = new PuppetInfoList
-                    {
-                        players = players,
-                        objects = objects,
-                    };
-                    // Serialize PlayerInfoList and send to each connected client
-                    string allPuppetData = JsonConvert.SerializeObject(puppetInfoList);
-                    //Logger.Log($"{allPlayersData}");
-                    byte[] data = Encoding.ASCII.GetBytes(allPuppetData + '\n');
+            // Create PlayerInfoList from the players dictionary
+            PuppetInfoList puppetInfoList = new PuppetInfoList
+            {
+                players = players,
+                objects = objects,
+            };
+            // Serialize PlayerInfoList and send to each connected client
+            string allPuppetData = JsonConvert.SerializeObject(puppetInfoList);
+            //Logger.Log($"{allPlayersData}");
+            byte[] data = Encoding.ASCII.GetBytes(allPuppetData + '\n');
 
-                    lock (clients)
+            lock (clients)
+            {
+                foreach (TcpClient client in clients)
+                {
+                    NetworkStream stream = client.GetStream();
+                    if (true)
                     {
-                        foreach (TcpClient client in clients)
-                        {
-                            try
-                            {
-                                NetworkStream stream = client.GetStream();
-                                if (true)
-                                {
-                                    i++;
-                                    stream.Write(data, 0, data.Length);
-                                    stream.Flush();
-                                }
-                            }
-                            catch (Exception e) { Logger.LogError($"Error sending data to client {client.Client.RemoteEndPoint}: {e.Message}"); continue; }
-                        }
+                        i++;
+                        stream.Write(data, 0, data.Length);
+                        stream.Flush();
                     }
                 }
-                catch (Exception e) { Logger.LogError(e.ToString()); /*continue;*/ }
-            //}
+            }
+
         }
 
 
@@ -262,7 +309,7 @@ namespace MovementSystemServer
         {
             NetworkStream stream = client.GetStream();
             byte[] data = Encoding.ASCII.GetBytes("Server full");
-            stream.Write(data,0, data.Length);
+            stream.Write(data, 0, data.Length);
             stream.Close();
             client.Close();
         }
