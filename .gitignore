@@ -4,3 +4,5 @@
 /obj/Release
 /Properties
 *.user
+/bin/Debug/net6.0/win-x86
+/obj/Debug/net6.0

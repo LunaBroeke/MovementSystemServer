@@ -18,18 +18,25 @@ namespace MovementSystemServer
 
     public class PlayerInfo
     {
+        public int puppetID { get; set; }
         public string playerName { get; set; }
         public Position position { get; set; }
         public int health { get; set; }
-        public int puppetID { get; set; }
         public string IPv4 { get; set; }
+    }
+    public class ObjectInfo
+    {
+        public int puppetID { get; set; }
+        public Position position { get; set; }
+        public int master { get; set; } = -1;
     }
 
     // Updated PlayerInfoList to match the new format
     [Serializable]
-    public class PlayerInfoList
+    public class PuppetInfoList
     {
         public List<PlayerInfo> players = new List<PlayerInfo>();
+        public List<ObjectInfo> objects = new List<ObjectInfo>();
     }
 
     public class Program
@@ -37,20 +44,21 @@ namespace MovementSystemServer
         private const int maxPlayers = 4;
         public TcpListener server;
         public static List<PlayerInfo> players = new List<PlayerInfo>();
-        public static List<TcpClient> clients = new List<TcpClient>(); // Track connected clients
+        public static List<TcpClient> clients = new List<TcpClient>();
+        public static List<ObjectInfo> objects = new List<ObjectInfo>();
         
         public static void Main(string[] args)
         {
             Program program = new();
             ConsoleHandler ch = new() { program = program};
-            Thread serverThread =new Thread(program.StartServer) { IsBackground = true };
+            Thread serverThread =new Thread(program.StartServer) { IsBackground = true, Priority = ThreadPriority.Highest };
             //serverThread.Start();
 
             Thread consoleThread = new Thread(ch.StartConsole) { IsBackground = true };
             consoleThread.Start();
 
-            Thread broadcast = new Thread(program.BroadcastPlayerData) { IsBackground = true };
-            broadcast.Start();
+            //Thread broadcast = new Thread(program.BroadcastPuppetData) { IsBackground = true };
+            //broadcast.Start();
 //            while (serverThread.IsAlive) { Thread.Sleep(100); }
             program.StartServer();
         }
@@ -155,7 +163,7 @@ namespace MovementSystemServer
                         continue;
                     }
 
-                    //BroadcastPlayerData();
+                    BroadcastPuppetData();
                 }
             }
             catch (Exception e)
@@ -208,22 +216,24 @@ namespace MovementSystemServer
             return id;
         }
 
-        private void BroadcastPlayerData()
+        private void BroadcastPuppetData()
         {
             int i = 0;
-            while (true)
-            {
+            //while (true)
+            //{
                 try
                 {
+                    Thread.Sleep(30);
                     // Create PlayerInfoList from the players dictionary
-                    PlayerInfoList playerInfoList = new PlayerInfoList
+                    PuppetInfoList puppetInfoList = new PuppetInfoList
                     {
-                        players = players
+                        players = players,
+                        objects = objects,
                     };
                     // Serialize PlayerInfoList and send to each connected client
-                    string allPlayersData = JsonConvert.SerializeObject(playerInfoList);
+                    string allPuppetData = JsonConvert.SerializeObject(puppetInfoList);
                     //Logger.Log($"{allPlayersData}");
-                    byte[] data = Encoding.ASCII.GetBytes(allPlayersData + '\n');
+                    byte[] data = Encoding.ASCII.GetBytes(allPuppetData + '\n');
 
                     lock (clients)
                     {
@@ -242,10 +252,9 @@ namespace MovementSystemServer
                             catch (Exception e) { Logger.LogError($"Error sending data to client {client.Client.RemoteEndPoint}: {e.Message}"); continue; }
                         }
                     }
-                    Thread.Sleep(30);
                 }
-                catch (Exception e) { Logger.LogError(e.ToString()); continue; }
-            }
+                catch (Exception e) { Logger.LogError(e.ToString()); /*continue;*/ }
+            //}
         }
 
 
