@@ -27,6 +27,7 @@ namespace MovementSystemServer
     {
         public PlayerInfo info { get; set; }
         public TcpClient tcpClient { get; set; }
+        public Thread thread { get; set; }
 
     }
     public class ObjectInfo
@@ -35,12 +36,22 @@ namespace MovementSystemServer
         public Position position { get; set; }
         public int master { get; set; } = -1;
     }
-
-    // Updated PlayerInfoList to match the new format
     [Serializable]
-    public class PuppetInfoList
+    public class ServerInfo
     {
+        public string type = "ServerInfo";
+        public PlayerInfo master { get; set; }
+    }
+    [Serializable]
+    public class PlayerInfoList
+    {
+        public string type = "PlayerInfo";
         public List<PlayerInfo> players = new List<PlayerInfo>();
+    }
+    [Serializable]
+    public class ObjectInfoList
+    {
+        public string type = "ObjectInfo";
         public List<ObjectInfo> objects = new List<ObjectInfo>();
     }
 
@@ -53,7 +64,8 @@ namespace MovementSystemServer
         public static List<TcpClient> clients = new List<TcpClient>();
         public static List<ObjectInfo> objects = new List<ObjectInfo>();
 
-        public static PlayerInfo master;
+        //public static PlayerInfo master;
+        public static ServerInfo serverInfo = new ServerInfo();
 
         public static void Main(string[] args)
         {
@@ -68,7 +80,7 @@ namespace MovementSystemServer
             //Thread broadcast = new Thread(program.BroadcastPuppetData) { IsBackground = true };
             //broadcast.Start();
             //            while (serverThread.IsAlive) { Thread.Sleep(100); }
-            master = new PlayerInfo();
+            serverInfo.master = new PlayerInfo();
             program.StartServer();
         }
 
@@ -116,8 +128,8 @@ namespace MovementSystemServer
         }
         private PlayerInfo CheckMaster()
         {
-            try { if (master.puppetID == -1) { PlayerInfo p = players.First(); Logger.Log($"{p.playerName} has been selected as master"); return p; } } catch { return new PlayerInfo(); }
-            return master;
+            try { if (serverInfo.master.puppetID == -1) { PlayerInfo p = players.First(); Logger.Log($"{p.playerName} has been selected as master"); return p; } } catch { return new PlayerInfo(); }
+            return serverInfo.master;
         }
         private bool ClientCode(string message, TcpClient client, PlayerInfo player)
         {
@@ -142,6 +154,7 @@ namespace MovementSystemServer
                 byte[] puppetIDData = Encoding.ASCII.GetBytes($"{puppetID}\n");
                 stream.Write(puppetIDData, 0, puppetIDData.Length);
                 Console.WriteLine($"Assigned Puppet ID: {puppetID}");
+                Thread.Sleep(100);
 
                 while (client.Connected)
                 {
@@ -179,8 +192,8 @@ namespace MovementSystemServer
                                 {
                                     // Add new player if not found
                                     players.Add(playerInfo);
-                                    lock (serverPlayers) { ServerPlayer sp = new ServerPlayer { info = playerInfo, tcpClient = client }; serverPlayers.Add(sp); }
-                                    lock (master) { master = CheckMaster(); }
+                                    lock (serverPlayers) { ServerPlayer sp = new ServerPlayer { info = playerInfo, tcpClient = client, thread = Thread.CurrentThread }; serverPlayers.Add(sp); }
+                                    lock (serverInfo.master) { serverInfo.master = CheckMaster(); }
                                 }
                             }
                         }
@@ -196,7 +209,7 @@ namespace MovementSystemServer
                         continue;
                     }
 
-                    try { BroadcastPuppetData(); }
+                    try { BroadcastPlayerData(); }
                     catch (Exception e) { Logger.LogError(e.Message); continue; };
                 }
             }
@@ -227,17 +240,20 @@ namespace MovementSystemServer
             {
                 clients.Remove(client);
             }
+            ServerPlayer sp = FindServerPlayer(FindPlayerByID(puppetID));
 
             lock (players)
             {
-                serverPlayers.Remove(FindServerPlayer(FindPlayerByID(puppetID)));
+                serverPlayers.Remove(sp);
                 players.Remove(FindPlayerByID(puppetID));
-                if (master.puppetID == puppetID) { Logger.LogWarning($"Master disconnected, attempting to assign new Master"); master.puppetID = -1; master = CheckMaster(); }
+                if (serverInfo.master.puppetID == puppetID) { Logger.LogWarning($"Master disconnected, attempting to assign new Master"); serverInfo.master = new(); serverInfo.master = CheckMaster(); }
             }
 
             client.Close();
             Logger.Log($"Client with Puppet ID {puppetID} disconnected.");
+            Thread.CurrentThread.Join();
         }
+
         void Disconnect(TcpClient client)
         {
             lock (clients)
@@ -245,8 +261,8 @@ namespace MovementSystemServer
                 clients.Remove(client);
             }
 
-            client.Close();
             Logger.Log($"Client {client.Client.RemoteEndPoint} disconnected.");
+            client.Close();
         }
 
         static PlayerInfo FindPlayerByID(int playerID)
@@ -274,34 +290,53 @@ namespace MovementSystemServer
             return id;
         }
 
-        private void BroadcastPuppetData()
+        public void BroadcastServerInfo()
         {
-            int i = 0;
+            string s = JsonConvert.SerializeObject(serverInfo);
+            Logger.LogWarning(s);
+            byte[] data = Encoding.ASCII.GetBytes(s + '\n');
+            BroadcastData(data);
+        }
+
+        private void BroadcastPlayerData()
+        {
             // Create PlayerInfoList from the players dictionary
-            PuppetInfoList puppetInfoList = new PuppetInfoList
+            PlayerInfoList puppetInfoList = new PlayerInfoList
             {
-                players = players,
-                objects = objects,
+                players = players
             };
             // Serialize PlayerInfoList and send to each connected client
             string allPuppetData = JsonConvert.SerializeObject(puppetInfoList);
-            //Logger.Log($"{allPlayersData}");
             byte[] data = Encoding.ASCII.GetBytes(allPuppetData + '\n');
 
+            BroadcastData(data);
+
+        }
+
+        private void BroadcastData(byte[] data)
+        {
             lock (clients)
             {
                 foreach (TcpClient client in clients)
                 {
-                    NetworkStream stream = client.GetStream();
-                    if (true)
+                    try
                     {
-                        i++;
-                        stream.Write(data, 0, data.Length);
-                        stream.Flush();
+                        NetworkStream stream = client.GetStream();
+                        if (true)
+                        {
+                            stream.Write(data, 0, data.Length);
+                            stream.Flush();
+                        }
                     }
+                    catch (InvalidOperationException e) 
+                    {
+                        Logger.LogError($"{e}");
+                        Disconnect(client);
+                        continue;
+                    }
+                    catch (Exception e) { Logger.LogError($"{e}");  continue; }
                 }
             }
-
         }
 
 

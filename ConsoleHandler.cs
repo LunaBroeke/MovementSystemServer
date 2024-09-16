@@ -33,7 +33,8 @@ namespace MovementSystemServer
                 {
                     Logger.Log($"Connected clients: {Program.clients.Count}\n {ListClients(Program.clients)}");
                     Logger.Log($"Active players: {Program.serverPlayers.Count}\n {ListPlayers(Program.serverPlayers)}");
-                    Logger.Log($"Master: {Program.master.playerName}");
+                    Logger.Log($"Master: {Program.serverInfo.master.playerName}");
+                    program.BroadcastServerInfo();
                 }
                 else
                 {
