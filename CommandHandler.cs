@@ -16,10 +16,11 @@ namespace MovementSystemServer
     }
     public static class CommandHandler
     {
+        [Obsolete]
         public static void AssignObjectID(Command c, TcpClient client)
         {
             int tempID = int.Parse(c.arguments[1]);
-            int puppetID = Program.AssingPuppetID();
+            int puppetID = Program.AssignPuppetID();
             c.command = "SyncID";
             c.arguments[2] = puppetID.ToString();
             NetworkStream stream = client.GetStream();
@@ -39,6 +40,18 @@ namespace MovementSystemServer
             string s = JsonConvert.SerializeObject(c);
             byte[] data = Encoding.UTF8.GetBytes(s + '\n');
             stream.Write(data,0, data.Length);
+        }
+
+        public static void BroadcastMaster(PlayerInfo p)
+        {
+            Command c = new Command
+            {
+                command = "BroadcastMaster",
+                arguments = new string[] { p.puppetID.ToString() }
+            };
+            string s = JsonConvert.SerializeObject(c);
+            byte[] data = Encoding.UTF8.GetBytes(s,0, s.Length);
+            Program.BroadcastData(data);
         }
     }
 }

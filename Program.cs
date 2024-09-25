@@ -15,12 +15,20 @@ namespace MovementSystemServer
         public float y { get; set; }
         public float z { get; set; }
     }
+    public class Rotation
+    {
+        public float x { get; set;}
+        public float y { get; set;}
+        public float z { get; set;}
+        public float w { get; set;}
+    }
 
     public class PlayerInfo
     {
         public int puppetID { get; set; } = -1;
         public string playerName { get; set; }
         public Position position { get; set; }
+        public Rotation rotation { get; set; }
         public int health { get; set; }
     }
     public class ServerPlayer
@@ -34,6 +42,7 @@ namespace MovementSystemServer
     {
         public int puppetID { get; set; } = -1;
         public Position position { get; set; }
+        public Rotation rotation { get; set; }
         public int master { get; set; } = -1;
     }
     [Serializable]
@@ -65,6 +74,7 @@ namespace MovementSystemServer
         public static List<PlayerInfo> players = new List<PlayerInfo>();
         public static List<TcpClient> clients = new List<TcpClient>();
         public static List<ObjectInfo> objects = new List<ObjectInfo>();
+        public static int expectedKB = 4;
 
         //public static PlayerInfo master;
         public static ServerInfo serverInfo = new ServerInfo();
@@ -128,9 +138,9 @@ namespace MovementSystemServer
                 Logger.Log("Server stopped.");
             }
         }
-        private PlayerInfo CheckMaster()
+        private static PlayerInfo CheckMaster()
         {
-            try { if (serverInfo.master.puppetID == -1) { PlayerInfo p = players.First(); Logger.Log($"{p.playerName} has been selected as master"); CommandHandler.ObjectSyncRequest(FindServerPlayer(p).tcpClient); return p; } } catch { return new PlayerInfo(); }
+            try { if (serverInfo.master.puppetID == -1) { PlayerInfo p = players.First(); Logger.Log($"{p.playerName} has been selected as master"); return p; } } catch { return new PlayerInfo(); }
             return serverInfo.master;
         }
         private bool ClientCode(string message, TcpClient client, PlayerInfo player)
@@ -146,11 +156,11 @@ namespace MovementSystemServer
         }
         private void HandleClient(TcpClient client)
         {
-            int puppetID = AssingPuppetID();
+            int puppetID = AssignPuppetID();
             try
             {
                 NetworkStream stream = client.GetStream();
-                byte[] bytes = new byte[512];
+                byte[] bytes = new byte[1024 * expectedKB];
                 string data = null;
 
                 byte[] puppetIDData = Encoding.UTF8.GetBytes($"{puppetID}\n");
@@ -256,6 +266,7 @@ namespace MovementSystemServer
                     players.Add(playerInfo);
                     lock (serverPlayers) { ServerPlayer sp = new ServerPlayer { info = playerInfo, tcpClient = client, thread = Thread.CurrentThread }; serverPlayers.Add(sp); }
                     lock (serverInfo.master) { serverInfo.master = CheckMaster(); }
+                    CommandHandler.BroadcastMaster(serverInfo.master);
                 }
             }
         }
@@ -263,6 +274,7 @@ namespace MovementSystemServer
         void ReceiveObjectData(string data, TcpClient client)
         {
             ObjectInfo objectInfo = JsonConvert.DeserializeObject<ObjectInfo>(data);
+            if (objectInfo.master == null) throw new IncompatiblePacketException("Incompatible packet for ObjectData");
 
             ObjectInfo existingObj = FindObjectByID(objectInfo.puppetID);
             if (existingObj != null)
@@ -272,7 +284,7 @@ namespace MovementSystemServer
             else
             {
                 //objectInfo.puppetID = AssingPuppetID();
-                //objects.Add(objectInfo);
+                objects.Add(objectInfo);
             }
         }
 
@@ -282,7 +294,7 @@ namespace MovementSystemServer
             return playerInfo.playerName;
         }
 
-        void Disconnect(TcpClient client, int puppetID)
+        public static void Disconnect(TcpClient client, int puppetID)
         {
             lock (clients)
             {
@@ -302,7 +314,7 @@ namespace MovementSystemServer
             Thread.CurrentThread.Join();
         }
 
-        void Disconnect(TcpClient client)
+        public static void Disconnect(TcpClient client)
         {
             lock (clients)
             {
@@ -337,11 +349,11 @@ namespace MovementSystemServer
             return null;
         }
 
-        public static int AssingPuppetID()
+        public static int AssignPuppetID()
         {
             int id;
             Random random = new Random();
-            do { id = random.Next(1, 1000); } while (players.Contains(FindPlayerByID(id))||objects.Contains(FindObjectByID(id)));
+            do { id = random.Next(1, 99); } while (players.Contains(FindPlayerByID(id))||objects.Contains(FindObjectByID(id)));
             return id;
         }
 
@@ -379,7 +391,7 @@ namespace MovementSystemServer
             BroadcastData(data);
         }
 
-        private void BroadcastData(byte[] data)
+        public static void BroadcastData(byte[] data)
         {
             lock (clients)
             {

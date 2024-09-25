@@ -60,13 +60,21 @@ namespace MovementSystemServer
             int i = 0;
             foreach (ServerPlayer p in sps)
             {
-                PlayerInfo pi = p.info;
-                TcpClient tcp = p.tcpClient;
-                IPEndPoint ipe = tcp.Client.RemoteEndPoint as IPEndPoint;
-                i++;
-                s += $"IPv4: {ipe.Address}:{ipe.Port}\n Name: {pi.playerName}\n PuppetID:{pi.puppetID}\n ";
+                try
+                {
+                    PlayerInfo pi = p.info;
+                    TcpClient tcp = p.tcpClient;
+                    IPEndPoint ipe = tcp.Client.RemoteEndPoint as IPEndPoint;
+                    i++;
+                    s += $"IPv4: {ipe.Address}:{ipe.Port}\n Name: {pi.playerName}\n PuppetID:{pi.puppetID}\n ";
+                }
+                catch (Exception e)
+                {
+                    Logger.LogError(e.ToString());
+                    Program.Disconnect(p.tcpClient);
+                }
             }
-            return s;
+                return s;
+            }
         }
     }
-}
