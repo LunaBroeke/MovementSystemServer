@@ -30,11 +30,13 @@ namespace MovementSystemServer
         public Position position { get; set; }
         public Rotation rotation { get; set; }
         public int health { get; set; }
+        public int ping { get; set; }
     }
     public class ServerPlayer
     {
         public PlayerInfo info { get; set; }
         public TcpClient tcpClient { get; set; }
+        public IPEndPoint udpEndPoint { get; set; }
         public Thread thread { get; set; }
 
     }
@@ -79,6 +81,9 @@ namespace MovementSystemServer
         //public static PlayerInfo master;
         public static ServerInfo serverInfo = new ServerInfo();
 
+        public static UdpClient udpServer;
+        public static int udpPort = 37485;
+
         public static void Main(string[] args)
         {
             Program program = new();
@@ -96,6 +101,62 @@ namespace MovementSystemServer
             program.StartServer();
         }
 
+        public void StartUDPServer(int udpPort)
+        {
+            udpServer = new UdpClient(udpPort);
+            Logger.Log($"UDP server listening on port {udpPort}");
+
+            Thread udpRecieveThread = new Thread(() =>
+            {
+                IPEndPoint remoteEndPoint = new IPEndPoint(IPAddress.Any, udpPort);
+                while (true)
+                {
+                    try
+                    {
+                        byte[] receivedData = udpServer.Receive(ref remoteEndPoint);
+                        string receivedMessage = Encoding.UTF8.GetString(receivedData);
+                        //Logger.Log(receivedMessage);
+                        ProcessPlayerDataFromUDP(receivedMessage,remoteEndPoint);
+
+                    }
+                    catch (SocketException ex)
+                    {
+                        //Logger.LogError($"Socket Exception: {ex}");
+                    }
+                    catch (Exception ex)
+                    {
+                        Logger.LogError($"Unexpected Error: {ex}");
+                    }
+                }
+            })
+            {
+                IsBackground = true
+            };
+            Thread udpSendThread = new Thread (() =>
+            {
+                while (true)
+                {
+                    BroadcastUDPPlayerData();
+                    Thread.Sleep(10);
+                }
+            })
+            { 
+                IsBackground = true 
+            };
+            udpRecieveThread.Start();
+            udpSendThread.Start();
+        }
+
+        public void BroadcastUDPPlayerData()
+        {
+            lock (players)
+            {
+                PlayerInfoList playerInfoList = new PlayerInfoList { players = players };
+                string playerData = JsonConvert.SerializeObject(playerInfoList);
+                byte[] data = Encoding.UTF8.GetBytes(playerData + '\n');
+                BroadcastDataUDP(data);
+            }
+        }
         public void StartServer()
         {
             try
@@ -108,7 +169,7 @@ namespace MovementSystemServer
                 Logger.Log($"Listening on {address}");
                 Logger.Log($"Listening on {port}");
                 Console.WriteLine("Server started. Waiting for connections...");
-
+                StartUDPServer(udpPort);
                 while (true)
                 {
                     TcpClient client = server.AcceptTcpClient();
@@ -121,7 +182,7 @@ namespace MovementSystemServer
                         else { Logger.LogWarning($"Client {endPoint.Address}:{endPoint.Port} exceeded max players"); MaxPlayer(client); continue; }
                     }
 
-                    Thread clientThread = new Thread(() => HandleClient(client))
+                    Thread clientThread = new Thread(() => HandleTcpClient(client))
                     {
                         IsBackground = true
                     };
@@ -154,7 +215,7 @@ namespace MovementSystemServer
                     return false;
             }
         }
-        private void HandleClient(TcpClient client)
+        private void HandleTcpClient(TcpClient client)
         {
             int puppetID = AssignPuppetID();
             try
@@ -170,10 +231,11 @@ namespace MovementSystemServer
 
                 while (client.Connected)
                 {
-                    stream.ReadTimeout = 5000;
+                    SendPing(client);
+                    stream.ReadTimeout = 10000;
                     int bytesRead = stream.Read(bytes, 0, bytes.Length);
                     //Logger.Log(bytesRead.ToString());
-                    if (bytesRead == 0) break;
+                    if (bytesRead == 0) continue;
 
                     data = Encoding.UTF8.GetString(bytes, 0, bytesRead);
 
@@ -182,7 +244,6 @@ namespace MovementSystemServer
                     {
                         foreach (string d in datas)
                         {
-                            Logger.LogWarning(d);
                             TypeCheck tp = JsonConvert.DeserializeObject<TypeCheck>(d);
                             if (ClientCode(d, client, FindPlayerByID(puppetID))) { return; }
                             //ReceiveCommand(d,client);
@@ -207,9 +268,9 @@ namespace MovementSystemServer
                     {
                         Logger.LogError(e.Message);
                     }
-
-                    try { BroadcastPlayerData(); BroadcastObjectData(); }
-                    catch (Exception e) { Logger.LogError(e.Message); continue; };
+                    //BroadcastUDPPlayerData();
+                    //try { BroadcastPlayerData(); BroadcastObjectData(); }
+                    //catch (Exception e) { Logger.LogError(e.Message); continue; };
                 }
             }
             catch (Exception e)
@@ -226,13 +287,57 @@ namespace MovementSystemServer
                 Disconnect(client, puppetID);
             }
         }
+        private void SendPing(TcpClient client)
+        {
+            NetworkStream stream = client.GetStream();
+            stream.WriteTimeout=5000;
+            Command c = new Command() { command = "PING"};
+            string s = JsonConvert.SerializeObject(c);
+            byte[] data = Encoding.UTF8.GetBytes(s,0,s.Length);
+            stream.Write(data);
+        }
+        public void ProcessPlayerDataFromUDP(string jsonData, IPEndPoint endPoint)
+        {
+            try
+            {
+                PlayerInfo playerInfo = JsonConvert.DeserializeObject<PlayerInfo>(jsonData);
 
+                lock (players)
+                {
+                    PlayerInfo existingPlayer = FindPlayerByID(playerInfo.puppetID);
+                    if (existingPlayer != null)
+                    {
+                        ServerPlayer ServerPlayer = FindServerPlayer(playerInfo);
+                        ServerPlayer.udpEndPoint = endPoint;
+                        existingPlayer.position = playerInfo.position;
+                        existingPlayer.rotation = playerInfo.rotation;
+                        existingPlayer.health = playerInfo.health;
+                        //Console.WriteLine($"Updated player {existingPlayer.playerName} position to: ({existingPlayer.position.x}, {existingPlayer.position.y}, {existingPlayer.position.z})");
+                    }
+                    else
+                    {
+                        //Logger.LogWarning("Waiting on connection confirmation");
+                    }
+                }
+            }
+            catch (JsonSerializationException e)
+            {
+                Console.WriteLine($"Error deserializing player data: {e.Message}");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error processing UDP data: {ex.Message}");
+            }
+        }
         void ReceiveCommand(string data, TcpClient client)
         {
             Command command = JsonConvert.DeserializeObject<Command>(data);
             if (command.command == null) throw new IncompatiblePacketException("Incompatible packet for commands");
             switch (command.command)
             {
+                case "PONG":
+                    //Logger.Log($"PONG from {client}");
+                    break;
                 case "RequestID":
                     CommandHandler.AssignObjectID(command,client);
                     break;
@@ -244,8 +349,9 @@ namespace MovementSystemServer
         void ReceivePlayerData(string data, TcpClient client, int puppetID)
         {
             PlayerInfo playerInfo = JsonConvert.DeserializeObject<PlayerInfo>(data);
-            playerInfo.puppetID = puppetID; // Assign puppetID
             if (playerInfo.playerName == null) throw new IncompatiblePacketException("Incompatible packet for Player Data");
+            playerInfo.puppetID = puppetID; // Assign puppetID
+            Logger.Log($"Stage1");
             lock (players)
             {
                 playerInfo.playerName = NameCheck(playerInfo);
@@ -413,6 +519,38 @@ namespace MovementSystemServer
                         continue;
                     }
                     catch (Exception e) { Logger.LogError($"{e}");  continue; }
+                }
+            }
+        }
+
+        public static void BroadcastDataUDP(byte[] data)
+        {
+            lock (serverPlayers)
+            {
+                try
+                {
+                    foreach (ServerPlayer player in serverPlayers)
+                    {
+                        try
+                        {
+                            //IPEndPoint endPoint = (IPEndPoint)player.tcpClient.Client.RemoteEndPoint;
+                            IPEndPoint endPoint = player.udpEndPoint;
+                            udpServer.Send(data, data.Length, endPoint);
+                            //Logger.Log($"Sent UDP packet to {endPoint}");
+                        }
+                        catch (SocketException ex)
+                        {
+                            Console.WriteLine($"UDP broadcast error: {ex.Message}");
+                        }
+                        catch (Exception ex)
+                        {
+                            Logger.LogError($"General error: {ex}");
+                        }
+                    }
+                }
+                catch (InvalidOperationException ex)
+                {
+
                 }
             }
         }
